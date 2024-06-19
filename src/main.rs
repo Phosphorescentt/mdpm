@@ -11,16 +11,13 @@ struct Args {
     command: Commands,
 }
 
-struct Project {
-    title: String,
-}
-
-struct Task {
-    title: String,
-    project: Project,
-}
-
 fn main() {
     let args = Args::parse();
     return mdpm::handle_command(args.command);
 }
+
+// Categories are groupings of tasks by team or area of code.
+// Categories affect the slugs that the tasks recieve.
+// Projects are logical groupings of tasks
+// No work is stored in a project, only a set of tasks and a set of projects.
+// Tasks are work to be done. This is the most granular level of work.
