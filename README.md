@@ -1,10 +1,11 @@
-# **m**ark**d**own **p**roject **m**management
+# mdpm
 
-A personal, local-first, todo/ticketing tool. The key idea is that you have a bunch of
-different task stores distributed across your filesystem containing todos/tickets for
-whatever directory you're in. When using the `mdpm` CLI from within that directory, you
-only get given the stuff relevant to that path. If you use `mdpm` from somewhere without
-an `mdpm` store then you will get shown all tasks across your whole system.
+mdpm, short for **m**ark**d**own **p**roject **m**anagement, is a personal, local-first,
+todo/ticketing tool. The key idea is that you have a bunch of different task stores
+distributed across your filesystem containing todos/tickets for whatever directory
+you're in. When using the `mdpm` CLI from within that directory, you only get given the
+stuff relevant to that path. If you use `mdpm` from somewhere without an `mdpm` store
+then you will get shown all tasks across your whole system.
 
 The individual files will be stored as markdown such that they can be read by humans and
 easily rendered into HTML via some kind of static site generator.
