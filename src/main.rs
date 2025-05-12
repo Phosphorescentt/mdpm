@@ -12,12 +12,14 @@ struct Args {
 }
 
 fn main() {
+    // make sure the args are valid first!
     let args = Args::parse();
-    return mdpm::handle_command(args.command);
-}
 
-// Categories are groupings of tasks by team or area of code.
-// Categories affect the slugs that the tasks recieve.
-// Projects are logical groupings of tasks
-// No work is stored in a project, only a set of tasks and a set of projects.
-// Tasks are work to be done. This is the most granular level of work.
+    // load config
+    let config = mdpm::load_config();
+
+    // load store_list into memory
+    let stores = mdpm::load_stores(&config);
+
+    return mdpm::handle_command(args.command, stores, config).unwrap();
+}

@@ -1,103 +1,119 @@
+use std::collections::HashMap;
+use std::io::Write;
 use std::{
-    fs::{self, File},
-    io::Write,
-    path::Path,
+    fs::{self, create_dir_all},
+    io,
+    path::{Path, PathBuf},
 };
 
-use crate::cli::{Commands, NewCommands};
+use crate::cli::Commands;
 
-pub fn handle_command(command: Commands) -> () {
-    match command {
-        Commands::Init { store_name } => init_store(store_name),
-        Commands::New(new_commands) => match new_commands {
-            NewCommands::Project { title, slug } => new_project(title, slug),
-            NewCommands::Task { title, project } => new_task(title, project),
-        },
+const MDPM_SHARE: &str = "~/.local/share/mdpm/";
+const STORE_LINES: &str = "store.lines";
+
+pub struct Config {
+    mdpm_share: PathBuf,
+}
+
+pub struct Store {
+    path: PathBuf,
+    // If this is `None` then we haven't initial
+    tickets: Option<Vec<Ticket>>,
+}
+
+impl Store {
+    fn load_tickets(&mut self) -> io::Result<()> {
+        todo!()
     }
 }
 
-fn init_store(store_name: String) -> () {
-    // First create the metadata file.
-    let file = File::create_new(".pm.md");
-    match file {
-        Ok(mut file) => {
-            file.write_all(store_name.as_bytes()).unwrap();
-            println!("Initialised mdpm store at current directory.")
-        }
-        Err(e) => {
-            println!("{}", e);
-            panic!("Something went wrong intialising the repo");
+impl From<PathBuf> for Store {
+    fn from(value: PathBuf) -> Self {
+        Store {
+            path: value,
+            tickets: None,
         }
     }
-
-    // Then create the projects and the tasks directory.
-    let _tasks_dir = fs::create_dir("tasks/").unwrap();
-    let _projects_dir = fs::create_dir("projects/").unwrap();
-
-    // Create the default EMPTY project.
-    new_project("Empty Project".to_string(), "EMPT".to_string());
 }
 
-fn new_task(title: String, project_slug: Option<String>) -> () {
-    let validated_project_slug: String = match project_slug {
-        Some(p) => {
-            if project_exists(p.clone()) {
-                p
-            } else {
-                panic!("Unable to find project.")
-            }
-        }
-        None => "EMPT".to_string(),
-    };
+pub struct Ticket;
 
-    let file_id = new_id_for_project(&validated_project_slug);
-    let slug = format!("{}-{}", validated_project_slug, file_id);
-    let mut task_file = File::create_new(format!("tasks/{}.task.md", slug)).unwrap();
+pub fn load_config() -> Config {
+    let mdpm_share_dir = PathBuf::from(shellexpand::tilde(MDPM_SHARE).parse::<String>().unwrap());
+    if !fs::exists(&mdpm_share_dir).unwrap() {
+        fs::create_dir_all(&mdpm_share_dir).unwrap();
+    }
 
-    task_file.write_all(
-        format!(
-            "title: {}\nslug: {}\nproject_slug: {}\n",
-            title, slug, validated_project_slug
-        )
-        .as_bytes(),
-    );
+    Config {
+        mdpm_share: mdpm_share_dir,
+    }
 }
 
-fn new_project(title: String, slug: String) -> () {
-    let mut project_file = File::create_new(format!("projects/{}.project.md", slug)).unwrap();
-    project_file
-        .write_all(format!("title: {}\nslug: {}\n--- \n", title, slug).as_bytes())
-        .unwrap();
-
-    println!("Created project {} with slug {}", title, slug);
-}
-
-fn project_exists(project_slug: String) -> bool {
-    Path::new(&format!("projects/{}.project.md", project_slug)).exists()
-}
-
-fn new_id_for_project(project_slug: &String) -> u32 {
-    let paths = fs::read_dir("tasks/").unwrap();
-    let max_id = paths
-        .filter_map(|x| {
-            let current_file_name = x
-                .as_ref()
+pub fn load_stores(config: &Config) -> HashMap<PathBuf, Store> {
+    let store_lines_path = config.mdpm_share.clone().join(STORE_LINES);
+    let store_map: HashMap<PathBuf, Store>;
+    if fs::exists(&store_lines_path).unwrap() {
+        store_map = HashMap::from_iter(
+            fs::read_to_string(store_lines_path)
                 .unwrap()
-                .file_name()
-                .to_string_lossy()
-                .to_string();
-            if current_file_name.starts_with(project_slug) {
-                let (_filename, remainder) = current_file_name.split_once("-").unwrap();
-                let (id, _extension) = remainder.split_once(".").unwrap();
-                Some(id.parse::<u32>().unwrap())
-            } else {
-                None
-            }
-        })
-        .max();
-
-    match max_id {
-        Some(id) => return id + 1,
-        None => return 1,
+                .split("\n")
+                .map(|s| {
+                    let store_path_buf = PathBuf::from(s.replace("\n", ""));
+                    (store_path_buf.clone(), Store::from(store_path_buf))
+                }),
+        );
+    } else {
+        fs::create_dir_all(&config.mdpm_share).unwrap();
+        fs::File::create(&store_lines_path).unwrap();
+        store_map = HashMap::new();
     }
+
+    store_map
+}
+
+pub fn append_to_store_list(
+    path: PathBuf,
+    stores: HashMap<PathBuf, Store>,
+    config: Config,
+) -> io::Result<()> {
+    if let Some(_store) = stores.get(&path) {
+        // If we already ahve something, return.
+        return Ok(());
+    } else {
+        let store_lines_path = config.mdpm_share.join(STORE_LINES);
+        let mut store_lines_file = fs::OpenOptions::new()
+            .append(true)
+            .open(&store_lines_path)
+            .unwrap();
+
+        let cwd = std::env::current_dir().unwrap();
+
+        store_lines_file.write_all(cwd.join(path).to_str().unwrap().as_bytes());
+        store_lines_file.write_all("\n".as_bytes());
+    }
+
+    Ok(())
+}
+
+pub fn handle_command(
+    command: Commands,
+    stores: HashMap<PathBuf, Store>,
+    config: Config,
+) -> io::Result<()> {
+    match command {
+        Commands::Init { store_dir_name } => {
+            let dir_to_create: PathBuf;
+            if let Some(store_dir) = store_dir_name {
+                dir_to_create = store_dir;
+            } else {
+                dir_to_create = PathBuf::from(".mdpm");
+            }
+
+            fs::create_dir(&dir_to_create).unwrap();
+            append_to_store_list(dir_to_create, stores, config);
+        }
+        _ => todo!(),
+    }
+
+    Ok(())
 }
