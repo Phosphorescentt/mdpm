@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::ops::DerefMut;
 use std::{
-    fs::{self},
+    fs::{self, DirEntry},
     io,
     path::PathBuf,
 };
@@ -19,14 +19,47 @@ pub struct Config {
 #[derive(Debug)]
 pub struct Store {
     path: PathBuf,
-    // If this is `None` then we haven't initial
-    _tickets: Option<Vec<Ticket>>,
+    // If this is `None` then we haven't hydrated the Store yet.
+    tickets: Option<Vec<Ticket>>,
 }
 
 impl Store {
     fn hydrate(&mut self) -> () {
         // Populate tasks
-        todo!()
+        let paths = std::fs::read_dir(&self.path).unwrap().filter_map(|d| {
+            let pa = d.as_ref().unwrap().path();
+            if let Some(extension) = pa.extension() {
+                // If we have an extension and it's ".md" and it's not a directory
+                if extension == "md" && !pa.is_dir() {
+                    Some(pa)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        });
+
+        let mut tickets = Vec::new();
+        for path in paths {
+            let content = fs::read_to_string(path).unwrap();
+
+            // NOTE: We could probably make this much easier using Serde or something but I cba
+            // right now :)
+            let mut iter = content.split("\n");
+
+            iter.next();
+            let title = iter.next().unwrap().split(":").collect::<Vec<&str>>()[1];
+            iter.next();
+            let body = iter.collect::<Vec<&str>>().concat();
+
+            tickets.push(Ticket {
+                title: String::from(title),
+                body: Some(body),
+            })
+        }
+
+        self.tickets = Some(tickets);
     }
 
     fn add_task(&mut self, title: String, body: Option<String>, filename: Option<PathBuf>) -> () {
@@ -51,7 +84,7 @@ impl Store {
             .unwrap();
 
         file.write_all("---\n".as_bytes());
-        file.write_all(format!(r#"title = "{}""#, title).as_bytes());
+        file.write_all(format!(r#"title:{}"#, title).as_bytes());
         file.write_all("\n".as_bytes());
         file.write_all("---\n".as_bytes());
         file.write_all(clean_body.as_bytes());
@@ -62,13 +95,16 @@ impl From<PathBuf> for Store {
     fn from(value: PathBuf) -> Self {
         Store {
             path: value,
-            _tickets: None,
+            tickets: None,
         }
     }
 }
 
 #[derive(Debug)]
-pub struct Ticket;
+pub struct Ticket {
+    title: String,
+    body: Option<String>,
+}
 
 pub fn load_config() -> Config {
     let mdpm_share_dir = PathBuf::from(shellexpand::tilde(MDPM_SHARE).parse::<String>().unwrap());
@@ -133,18 +169,22 @@ fn append_to_store_list(
 }
 
 pub fn handle_command(
-    command: Commands,
+    commands: Option<Commands>,
     stores: &mut HashMap<PathBuf, Store>,
     config: Config,
 ) -> io::Result<()> {
-    match command {
-        Commands::Init => init_store(stores, config),
-        Commands::New {
-            title,
-            body,
-            filename,
-        } => new_task(title, body, filename, stores, config),
-        _ => todo!(),
+    if let Some(command) = commands {
+        match command {
+            Commands::Init => init_store(stores, config),
+            Commands::New {
+                title,
+                body,
+                filename,
+            } => new_task(title, body, filename, stores, config),
+            _ => todo!(),
+        }
+    } else {
+        list_store(stores, config);
     }
 
     Ok(())
@@ -178,4 +218,11 @@ fn locate_store(stores: &mut HashMap<PathBuf, Store>) -> Option<&mut Store> {
     let store_dir = std::env::current_dir().unwrap().join(".mdpm");
     let store = stores.get_mut(&store_dir).unwrap();
     Some(store)
+}
+
+fn list_store(stores: &mut HashMap<PathBuf, Store>, config: Config) {
+    let store_dir = std::env::current_dir().unwrap().join(".mdpm");
+    let store = stores.get_mut(&store_dir).unwrap();
+    store.hydrate();
+    println!("{:?}", store);
 }

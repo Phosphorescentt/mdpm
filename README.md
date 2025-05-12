@@ -16,4 +16,5 @@ CRDTs for realtime collaboration.
 
 # Todo
 - [ ] When running `mdpm` from a directory without a `.mdpm` subdirectory, we should
-walk up the file tree until we find one.
+walk up the file tree until we find one. If we fail to find one, then we should fall
+back to globally looking for tickets.

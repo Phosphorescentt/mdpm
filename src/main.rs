@@ -8,7 +8,7 @@ use cli::Commands;
 #[command(version, about, long_about = None)]
 struct Args {
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 fn main() {
