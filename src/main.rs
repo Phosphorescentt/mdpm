@@ -19,7 +19,7 @@ fn main() {
     let config = mdpm::load_config();
 
     // load store_list into memory
-    let stores = mdpm::load_stores(&config);
+    let mut stores = mdpm::load_stores(&config);
 
-    return mdpm::handle_command(args.command, stores, config).unwrap();
+    return mdpm::handle_command(args.command, &mut stores, config).unwrap();
 }

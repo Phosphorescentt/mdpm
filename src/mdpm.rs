@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::io::Write;
+use std::ops::DerefMut;
 use std::{
-    fs::{self, create_dir_all},
+    fs::{self},
     io,
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use crate::cli::Commands;
@@ -15,15 +16,45 @@ pub struct Config {
     mdpm_share: PathBuf,
 }
 
+#[derive(Debug)]
 pub struct Store {
     path: PathBuf,
     // If this is `None` then we haven't initial
-    tickets: Option<Vec<Ticket>>,
+    _tickets: Option<Vec<Ticket>>,
 }
 
 impl Store {
-    fn load_tickets(&mut self) -> io::Result<()> {
+    fn hydrate(&mut self) -> () {
+        // Populate tasks
         todo!()
+    }
+
+    fn add_task(&mut self, title: String, body: Option<String>, filename: Option<PathBuf>) -> () {
+        let clean_body = if let Some(body) = body {
+            body
+        } else {
+            String::new()
+        };
+
+        let clean_filename = if let Some(filename) = filename {
+            filename
+        } else {
+            let mut file_path_buf = PathBuf::from(title.clone().to_lowercase().replace(" ", "_"));
+            file_path_buf.set_extension("md");
+            self.path.join(file_path_buf)
+        };
+
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(clean_filename)
+            .unwrap();
+
+        file.write_all("---\n".as_bytes());
+        file.write_all(format!(r#"title = "{}""#, title).as_bytes());
+        file.write_all("\n".as_bytes());
+        file.write_all("---\n".as_bytes());
+        file.write_all(clean_body.as_bytes());
     }
 }
 
@@ -31,11 +62,12 @@ impl From<PathBuf> for Store {
     fn from(value: PathBuf) -> Self {
         Store {
             path: value,
-            tickets: None,
+            _tickets: None,
         }
     }
 }
 
+#[derive(Debug)]
 pub struct Ticket;
 
 pub fn load_config() -> Config {
@@ -71,13 +103,13 @@ pub fn load_stores(config: &Config) -> HashMap<PathBuf, Store> {
     store_map
 }
 
-pub fn append_to_store_list(
+fn append_to_store_list(
     path: PathBuf,
-    stores: HashMap<PathBuf, Store>,
+    stores: &mut HashMap<PathBuf, Store>,
     config: Config,
 ) -> io::Result<()> {
     if let Some(_store) = stores.get(&path) {
-        // If we already ahve something, return.
+        // If we already have something, return.
         return Ok(());
     } else {
         let store_lines_path = config.mdpm_share.join(STORE_LINES);
@@ -88,8 +120,13 @@ pub fn append_to_store_list(
 
         let cwd = std::env::current_dir().unwrap();
 
-        store_lines_file.write_all(cwd.join(path).to_str().unwrap().as_bytes());
-        store_lines_file.write_all("\n".as_bytes());
+        store_lines_file
+            .write_all(cwd.join(&path).to_str().unwrap().as_bytes())
+            .unwrap();
+        store_lines_file.write_all("\n".as_bytes()).unwrap();
+        stores
+            .insert(path.clone(), Store::from(path.clone()))
+            .unwrap();
     }
 
     Ok(())
@@ -97,23 +134,48 @@ pub fn append_to_store_list(
 
 pub fn handle_command(
     command: Commands,
-    stores: HashMap<PathBuf, Store>,
+    stores: &mut HashMap<PathBuf, Store>,
     config: Config,
 ) -> io::Result<()> {
     match command {
-        Commands::Init { store_dir_name } => {
-            let dir_to_create: PathBuf;
-            if let Some(store_dir) = store_dir_name {
-                dir_to_create = store_dir;
-            } else {
-                dir_to_create = PathBuf::from(".mdpm");
-            }
-
-            fs::create_dir(&dir_to_create).unwrap();
-            append_to_store_list(dir_to_create, stores, config);
-        }
+        Commands::Init => init_store(stores, config),
+        Commands::New {
+            title,
+            body,
+            filename,
+        } => new_task(title, body, filename, stores, config),
         _ => todo!(),
     }
 
     Ok(())
+}
+
+fn init_store(stores: &mut HashMap<PathBuf, Store>, config: Config) {
+    let dir_to_create = PathBuf::from(".mdpm");
+
+    match fs::create_dir(&dir_to_create) {
+        Ok(()) => {
+            append_to_store_list(dir_to_create, stores, config).unwrap();
+        }
+        Err(_) => {
+            println!(".mdpm already exists for this directory.")
+        }
+    }
+}
+
+fn new_task(
+    title: String,
+    body: Option<String>,
+    filename: Option<PathBuf>,
+    stores: &mut HashMap<PathBuf, Store>,
+    config: Config,
+) {
+    let store = locate_store(stores).unwrap();
+    store.add_task(title, body, filename);
+}
+
+fn locate_store(stores: &mut HashMap<PathBuf, Store>) -> Option<&mut Store> {
+    let store_dir = std::env::current_dir().unwrap().join(".mdpm");
+    let store = stores.get_mut(&store_dir).unwrap();
+    Some(store)
 }
