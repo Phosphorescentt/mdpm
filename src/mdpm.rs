@@ -124,6 +124,7 @@ pub fn load_stores(config: &Config) -> HashMap<PathBuf, Store> {
         store_map = HashMap::from_iter(
             fs::read_to_string(store_lines_path)
                 .unwrap()
+                .trim()
                 .split("\n")
                 .map(|s| {
                     let store_path_buf = PathBuf::from(s.replace("\n", ""));
@@ -160,9 +161,7 @@ fn append_to_store_list(
             .write_all(cwd.join(&path).to_str().unwrap().as_bytes())
             .unwrap();
         store_lines_file.write_all("\n".as_bytes()).unwrap();
-        stores
-            .insert(path.clone(), Store::from(path.clone()))
-            .unwrap();
+        stores.insert(path.clone(), Store::from(path.clone()));
     }
 
     Ok(())
@@ -208,7 +207,7 @@ fn new_task(
     body: Option<String>,
     filename: Option<PathBuf>,
     stores: &mut HashMap<PathBuf, Store>,
-    config: Config,
+    _config: Config,
 ) {
     let store = locate_store(stores).unwrap();
     store.add_task(title, body, filename);
@@ -220,9 +219,15 @@ fn locate_store(stores: &mut HashMap<PathBuf, Store>) -> Option<&mut Store> {
     Some(store)
 }
 
-fn list_store(stores: &mut HashMap<PathBuf, Store>, config: Config) {
+fn list_store(stores: &mut HashMap<PathBuf, Store>, _config: Config) {
     let store_dir = std::env::current_dir().unwrap().join(".mdpm");
-    let store = stores.get_mut(&store_dir).unwrap();
-    store.hydrate();
-    println!("{:?}", store);
+    if let Some(store) = stores.get_mut(&store_dir) {
+        store.hydrate();
+    } else {
+        // list them all!
+        for (_path, store) in stores.iter_mut() {
+            store.hydrate();
+            println!("{:?}", store);
+        }
+    }
 }
